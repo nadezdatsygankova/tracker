@@ -15,18 +15,55 @@ export default function App() {
   const [entries, setEntries] = useState([]);
 
   useEffect(() => {
-    const currentSession = supabase.auth.getSession().then(({ data: { session } }) => {
+    const initSession = async () => {
+      // ✅ Handles magic link or OAuth redirect
+      const { data, error } = await supabase.auth.getSessionFromUrl();
+
+      if (error) {
+        console.error('Error getting session from URL:', error);
+      }
+
+      // ✅ Update session
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       setSession(session);
       setUser(session?.user ?? null);
-    });
 
+      // ✅ Remove the access_token hash from the URL
+      if (window.location.hash.includes('access_token')) {
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    };
+
+    initSession();
+
+    // ✅ Live session change listener
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
     });
 
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
+
+  const fetchEntries = async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('entries')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('date', { ascending: true });
+
+    if (!error) setEntries(data);
+  };
+
+  useEffect(() => {
+    if (user) fetchEntries();
+  }, [user]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -48,20 +85,6 @@ export default function App() {
       fetchEntries();
     }
   };
-
-  const fetchEntries = async () => {
-    if (!user) return;
-    const { data, error } = await supabase
-      .from('entries')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('date', { ascending: true });
-    if (!error) setEntries(data);
-  };
-
-  useEffect(() => {
-    if (user) fetchEntries();
-  }, [user]);
 
   if (!session) return <AuthUI />;
 
@@ -126,7 +149,6 @@ export default function App() {
         </button>
       </div>
 
-      {/* Show Entries */}
       <div className="max-w-md mx-auto mt-6 bg-white p-4 rounded shadow">
         <h2 className="text-lg font-bold mb-2">Recent Entries</h2>
         <ul className="text-sm text-gray-800 space-y-1">
@@ -139,11 +161,11 @@ export default function App() {
         </ul>
       </div>
 
-      {/* Chart */}
       <div className="max-w-md mx-auto mt-6 bg-white p-4 rounded shadow">
         <h2 className="text-lg font-bold mb-2">Temperature Chart</h2>
         <TemperatureChart data={entries} />
       </div>
+
       <CycleCalendar user={user} />
     </div>
   );
